@@ -155,6 +155,12 @@ def refresh(
     size: int = typer.Option(
         10000, "-s", "--size", help="Size of data for each insert to be inserted into MeiliSearch"
     ),
+    keep_index: bool = typer.Option(
+        False,
+        "-d",
+        "--keep-index",
+        help="Flag to avoid deleting the existing index before doing a full sync.",
+    ),
 ):
     async def _():
         settings = context.obj["settings"]
@@ -168,6 +174,7 @@ def refresh(
                 count = await meili.refresh_data(
                     sync,
                     source.get_full_data(sync, size),
+                    keep_index,
                 )
                 if count:
                     logger.info(
