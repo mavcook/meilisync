@@ -2,7 +2,6 @@ import asyncio
 from typing import List, Optional
 
 import typer
-import yaml
 from loguru import logger
 
 from meilisync.discover import get_progress, get_source
@@ -11,14 +10,13 @@ from meilisync.meili import Meili
 from meilisync.schemas import Event
 from meilisync.settings import Settings
 from meilisync.version import __VERSION__
+from meilisync.yaml_parser import parse_yaml
 
 app = typer.Typer()
 
 
 async def load(config_file='config.yml'):
-    with open(config_file) as f:
-        config = f.read()
-    settings = Settings.model_validate(yaml.safe_load(config))
+    settings = Settings.model_validate(parse_yaml(config_file))
     if settings.debug:
         logger.debug(settings)
     if settings.sentry:
