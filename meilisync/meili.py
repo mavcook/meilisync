@@ -12,6 +12,9 @@ from meilisync.schemas import Event
 from meilisync.settings import Sync
 
 
+TMP_INDEX_SUFFIX = '_meilisync_tmp'
+
+
 class Meili:
     def __init__(
         self,
@@ -35,7 +38,7 @@ class Meili:
         index = sync.index_name
         pk = sync.pk
         if not keep_index:
-            sync.index = index_name_tmp = f"{index}_tmp"
+            sync.index = index_name_tmp = f"{index}{TMP_INDEX_SUFFIX}"
             try:
                 await self.client.index(index_name_tmp).delete()
             except MeilisearchApiError as e:

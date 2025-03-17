@@ -1,4 +1,5 @@
 import asyncio
+import re
 from typing import List, Optional
 
 import typer
@@ -6,11 +7,12 @@ from loguru import logger
 
 from meilisync.discover import get_progress, get_source
 from meilisync.event import EventCollection
-from meilisync.meili import Meili
+from meilisync.meili import TMP_INDEX_SUFFIX, Meili
 from meilisync.schemas import Event
-from meilisync.settings import Settings
+from meilisync.settings import Settings, Sync
 from meilisync.version import __VERSION__
 from meilisync.yaml_parser import parse_yaml
+
 
 app = typer.Typer()
 
@@ -31,17 +33,31 @@ async def load(config_file='config.yml'):
     progress = get_progress(settings.progress.type)(
         **settings.progress.model_dump(exclude={"type"})
     )
+
+    meilisearch = settings.meilisearch
+    meili = Meili(meilisearch.api_url, meilisearch.api_key, settings.plugins_cls())
+
+    if settings.should_sync_existing_indices:
+        indices = await meili.client.get_indexes()
+        for index in indices:
+            if index.uid.endswith(TMP_INDEX_SUFFIX):
+                continue
+            settings_for_index = await index.get_settings()
+            sync = Sync(
+                plugins=settings.plugins, table=index.uid, pk=index.primary_key, index_settings=settings_for_index
+            )
+            settings.sync.append(sync)
+        logger.info('added global sync')
+
     current_progress = await progress.get()
     source_database = get_source(settings.source.type)(
         progress=current_progress,
         tables=settings.tables,
         **settings.source.model_dump(exclude={"type"}),
     )
-    meilisearch = settings.meilisearch
-    meili = Meili(meilisearch.api_url, meilisearch.api_key, settings.plugins_cls())
 
     return meili, source_database, current_progress, progress, settings
- 
+
 
 @app.callback()
 def callback(
@@ -57,12 +73,8 @@ def callback(
         if context.invoked_subcommand == "version":
             return
         context.ensure_object(dict)
-        meili, source, current_progress, progress, settings = await load(config_file=config_file)
-        context.obj["current_progress"] = current_progress
-        context.obj["source"] = source
-        context.obj["meili"] = meili
-        context.obj["settings"] = settings
-        context.obj["progress"] = progress
+        # can't load any async stuff in here otherwise will get error about event loops
+        context.obj["config_file"] = config_file
 
     asyncio.run(_())
 
@@ -76,17 +88,16 @@ def version():
 def start(
     context: typer.Context,
 ):
-    current_progress = context.obj["current_progress"]
-    source = context.obj["source"]
-    meili = context.obj["meili"]
-    settings = context.obj["settings"]
-    progress = context.obj["progress"]
-    meili_settings = settings.meilisearch
+    config_file = context.obj["config_file"]
     collection = EventCollection()
     lock = None
 
     async def _():
-        nonlocal current_progress
+        nonlocal config_file
+        meili, source, current_progress, progress, settings = await load(config_file=config_file)
+        meili_settings = settings.meilisearch
+
+
         for sync in settings.sync:
             if sync.full and not await meili.index_exists(sync.index_name):
                 count = 0
@@ -124,6 +135,9 @@ def start(
                 await progress.set(**current_progress)
 
     async def interval():
+        nonlocal config_file
+        meili, _source, current_progress, progress, settings = await load(config_file=config_file)
+    
         if not settings.meilisearch.insert_interval:
             return
         while True:
@@ -160,11 +174,12 @@ def refresh(
         help="Flag to avoid deleting the existing index before doing a full sync.",
     ),
 ):
+    config_file = context.obj["config_file"]
+    
     async def _():
-        settings = context.obj["settings"]
-        source = context.obj["source"]
-        meili = context.obj["meili"]
-        progress = context.obj["progress"]
+        nonlocal config_file
+        meili, source, current_progress, progress, settings = await load(config_file=config_file)
+
         for sync in settings.sync:
             if not table or sync.table in table:
                 current_progress = await source.get_current_progress()
@@ -196,10 +211,12 @@ def check(
         None, "-t", "--table", help="Table name, if not set, all tables"
     ),
 ):
+    config_file = context.obj["config_file"]
+    
     async def _():
-        settings = context.obj["settings"]
-        source = context.obj["source"]
-        meili = context.obj["meili"]
+        nonlocal config_file
+        meili, source, _current_progress, _progress, settings = await load(config_file=config_file)
+
         for sync in settings.sync:
             if not table or sync.table in table:
                 count = await source.get_count(sync)

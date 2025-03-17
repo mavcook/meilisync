@@ -130,10 +130,8 @@ sync:
   - table: picture
     index: beauty-pictures
     full: true
-    fields:
-      id:
-      description:
-      category:
+    index_settings:
+      # object of index settings from [meilisearch](https://www.meilisearch.com/docs/reference/api/settings#settings-object)
 sentry:
   dsn: ""
   environment: "production"
@@ -231,9 +229,27 @@ The sync configuration, you can add multiple sync tasks.
 - `table`: the database table name or collection name.
 - `index`: the Meilisearch index name, if not set, it will use the table name.
 - `full`: whether to do a full sync, default is `false`. If the index already exists, the full sync won't take place.
-- `fields`: the fields to sync, if not set, it will sync all fields. The key is table field name, the value is the
+- `index_settings`: object of index settings from [meilisearch](https://www.meilisearch.com/docs/reference/api/settings#settings-object). Most commonly, specifying the fields to sync
   Meilisearch field name, if not set, it will use the table field name.
 - `plugins`: the table level plugins, optional.
+
+### should_sync_existing_indices
+
+TODO: docs
+TODO: revisit design. currently removes ability to map field names between meilisearch and source db
+
+Instead of defining the config for each table, you can pull from your meilisearch's existing indices. This is advantageous when you have lots of postgres tables and a 1 to one mapping on what you want to search, as you will only need to maintain and control your meilisearch indices
+
+This requires 
+- your existing meilisearch index name to be the same as your database table name
+- your meilisearch and db field names to be the same
+  - note that subfields will work - field names that have a . in them (will just take the left side). So if you have a meilisearch field called `results.date`, the `results` column in postgres will be synced
+
+can give example of the plugin i made and how this replaces it
+
+this works in addition to the above sync
+
+TODO: design: maybe a better approach would be a sync entry with a wildcard or regex name, and then you could have n-tables to 1 index, and m-tables to another index.
 
 ### sentry (optional)
 
@@ -244,6 +260,9 @@ Sentry configuration.
 
 
 ## Contributing
+
+resource: dependency api docs: https://meilisearch-python-sdk.paulsanders.dev/index_api/
+
 
 ### Running Tests
 
