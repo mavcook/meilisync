@@ -56,6 +56,8 @@ class Sync(BasePlugin):
         except AttributeError:
             return None # no index settings, sync all fields: wildcard settings
         if attrs:
+            # add primary key in case it isn't included in searchable
+            attrs.append(self.pk) # or self.index_settings.distinct_attribute
             meili_for_db_field = {}
             for db_col_name in attrs:
                 meili_field_name = db_col_name
