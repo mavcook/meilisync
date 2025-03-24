@@ -44,6 +44,9 @@ class Sync(BasePlugin):
     index: str | None = None
     index_settings: MeilisearchSettings | None = None
 
+    use_existing: bool = True
+    # TODO: refresh/recreate_condition: when-settings-differ, never, always
+
     @property
     def index_name(self):
         return self.index or self.table

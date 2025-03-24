@@ -44,7 +44,11 @@ class Meili:
             except MeilisearchApiError as e:
                 if e.code != "MeilisearchApiError.index_not_found":
                     raise
-            settings = await self.client.index(index).get_settings()
+            if sync.use_existing:
+                settings = await self.client.index(index).get_settings()
+            else:
+                settings = sync.index_settings
+            
             index_tmp = await self.client.create_index(index_name_tmp, primary_key=pk)
             task = await index_tmp.update_settings(settings)
             logger.info(f"Waiting for update tmp index {index_name_tmp} settings to complete...")
