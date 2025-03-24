@@ -51,21 +51,36 @@ class Sync(BasePlugin):
     @property
     def fields(self):
         # TODO: revisit and improve
-        try:
-            attrs = self.index_settings.searchable_attributes
-        except AttributeError:
-            return None # no index settings, sync all fields: wildcard settings
-        if attrs:
-            # add primary key in case it isn't included in searchable
-            attrs.append(self.pk) # or self.index_settings.distinct_attribute
-            meili_for_db_field = {}
-            for db_col_name in attrs:
-                meili_field_name = db_col_name
-                if '.' in db_col_name:
-                    db_col_name = db_col_name.split('.', 1)[0]
-                meili_for_db_field[db_col_name] = meili_field_name
-            return meili_for_db_field
-        return None
+        if not self.index_settings:
+            # no index settings, sync all fields: wildcard settings
+            return None
+        
+        configured_fields = [
+            self.index_settings.searchable_attributes,
+            self.index_settings.filterable_attributes,
+            self.index_settings.sortable_attributes,
+            self.index_settings.displayed_attributes,
+        ]
+        attrs = set()
+        for _fields in configured_fields:
+            if _fields:
+                attrs = attrs.union(_fields)
+        if len(attrs) == 0:
+            return None
+
+        # add primary key in case it isn't included in searchable
+        attrs.add(self.pk) # or self.index_settings.distinct_attribute
+
+        meili_for_db_field = {}
+        for db_col_name in attrs:
+            if db_col_name == '*':
+                continue
+            meili_field_name = db_col_name
+            if '.' in db_col_name:
+                db_col_name = db_col_name.split('.', 1)[0]
+            meili_for_db_field[db_col_name] = meili_field_name
+        return meili_for_db_field
+
 
     def __hash__(self):
         return hash(self.table)
