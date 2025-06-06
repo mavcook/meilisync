@@ -46,7 +46,6 @@ async def load(config_file='config.yml'):
             sync = Sync(
                 plugins=settings.plugins, table=index.uid, pk=index.primary_key,
                 index_settings=settings_for_index,
-                full=True, # if false, need to run `meilisync refresh` AFTER `meilisync start`
             )
             settings.sync.append(sync)
         logger.info('added global sync')
@@ -101,7 +100,7 @@ def start(
 
 
         for sync in settings.sync:
-            if sync.full and not await meili.index_exists(sync.index_name):
+            if settings.should_sync_existing_indices or (sync.full and not await meili.index_exists(sync.index_name)):
                 count = 0
                 async for items in source.get_full_data(sync, meili_settings.insert_size or 10000):
                     count += len(items)
