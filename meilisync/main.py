@@ -44,7 +44,9 @@ async def load(config_file='config.yml'):
                 continue
             settings_for_index = await index.get_settings()
             sync = Sync(
-                plugins=settings.plugins, table=index.uid, pk=index.primary_key, index_settings=settings_for_index
+                plugins=settings.plugins, table=index.uid, pk=index.primary_key,
+                index_settings=settings_for_index,
+                full=True, # if false, need to run `meilisync refresh` AFTER `meilisync start`
             )
             settings.sync.append(sync)
         logger.info('added global sync')
