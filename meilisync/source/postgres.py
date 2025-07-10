@@ -66,18 +66,15 @@ class Postgres(Source):
         return {"start_lsn": start_lsn}
 
     async def get_full_data(self, sync: Sync, size: int):
-        if sync.fields:
-            fields = ", ".join(f'"{field}" as "{sync.fields[field] or field}"' for field in sync.fields)
-        else:
-            fields = "*"
         offset = 0
 
         def _():
             with self.conn_dict.cursor() as cur:
-                cur.execute(
-                    f"SELECT {fields} FROM {sync.table} ORDER BY "
-                    f'"{sync.pk}" LIMIT {size} OFFSET {offset}'
-                )
+
+                cur.execute(sync.on_sync_full_table_query, {
+                    'limit': size,
+                    'offset': offset,
+                })
                 return cur.fetchall()
 
         while True:
@@ -100,8 +97,12 @@ class Postgres(Source):
         msg.cursor.send_feedback(flush_lsn=msg.data_start)
 
     def __handle_change(self, change: dict[str, Any], next_lsn: str):
+        logger.debug('handle change', change)
         table = change.get("table")
-        if table not in self.tables:
+
+        is_allowed_table = table in self.tables # or table in self.modify_on_tables 
+
+        if not is_allowed_table:
             return
 
         columnnames = change.get("columnnames", [])
@@ -117,17 +118,24 @@ class Postgres(Source):
             values = dict(zip(columnnames, columnvalues))
             event_type = EventType.update
         elif kind == "delete":
-            values = (
-                dict(zip(columnnames, columnvalues))
-                if columnvalues
-                else {change["oldkeys"]["keynames"][0]: change["oldkeys"]["keyvalues"][0]}
-            )
+            if columnvalues:
+                values = dict(zip(columnnames, columnvalues))
+            else:
+                values = dict(zip(change["oldkeys"]["keynames"], change["oldkeys"]["keyvalues"]))
             event_type = EventType.delete
         elif kind == "insert":
             values = dict(zip(columnnames, columnvalues))
             event_type = EventType.create
         else:
             return
+        
+        # if table == 'record_change':
+        #     # hacky for updating related records
+        #     # TODO: if kind==update, and the record_id switched to something new, then the old doc will be left in the index still. maybe we should just not allow updates. only inserts and deletes
+        #     if kind == 'delete':
+        #         event_type = EventType.update
+        #     table = values['record_type']
+        #     values = {'pk': values['record_id']}
 
         logger.debug(f'Creating event {event_type=} {values=}')
         event =  Event(

@@ -56,6 +56,8 @@ async def load(config_file='config.yml'):
         tables=settings.tables,
         **settings.source.model_dump(exclude={"type"}),
     )
+    # count = await source_database.get_count(settings.sync[0])
+    # logger.info(f'hmmmmm {count}')
 
     return meili, source_database, current_progress, progress, settings
 
@@ -100,7 +102,15 @@ def start(
 
 
         for sync in settings.sync:
-            if settings.should_sync_existing_indices or (sync.full and not await meili.index_exists(sync.index_name)):
+            does_index_exist = await meili.index_exists(sync.index_name)
+            if not does_index_exist:
+                if sync.create_index_if_not_exists:
+                    await meili.create_index(sync)
+                else:
+                    raise ValueError(f'no index exists for {sync.index_name}')
+
+            if settings.should_sync_existing_indices or sync.full:
+                
                 count = 0
                 async for items in source.get_full_data(sync, meili_settings.insert_size or 10000):
                     count += len(items)

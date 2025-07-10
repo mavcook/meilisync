@@ -43,8 +43,13 @@ class Sync(BasePlugin):
     full: bool = False
     index: str | None = None
     index_settings: MeilisearchSettings | None = None
+    # on_sync_row_graphql_query: str
+    on_sync_row_query: str
+    on_sync_full_table_query: str
 
-    use_existing: bool = True
+    create_index_if_not_exists: bool
+
+    use_existing_index_settings: bool
     # TODO: refresh/recreate_condition: when-settings-differ, never, always
 
     @property
@@ -53,6 +58,7 @@ class Sync(BasePlugin):
     
     @property
     def fields(self):
+        raise ValueError('do not use please')
         # TODO: revisit and improve
         if not self.index_settings:
             # no index settings, sync all fields: wildcard settings

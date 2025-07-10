@@ -16,3 +16,33 @@ sync:
   - table: test
     index: postgres
     full: true
+
+    create_index_if_not_exists: true
+    use_existing_index_settings: false
+    on_startup_sync_full: true
+
+    on_sync_full_table_query: |
+      SELECT
+        *
+      FROM
+        public.product
+      LIMIT %(limit)s OFFSET %(offset)s;
+
+    # for example (even though likely better as a postgres view)
+    # grab up to permissions when syncing 
+    on_sync_row_query: |
+      SELECT
+        r.*,
+        COALESCE(
+          JSON_AGG(oa.org_id) FILTER (WHERE oa.org_id IS NOT NULL),
+          '[]'::json
+        ) AS org_ids_with_access
+      FROM
+        public.product AS r
+      LEFT JOIN
+        public.org_access AS oa
+        ON r.id = oa.record_id
+      WHERE
+        r.id = %s
+      GROUP BY
+        r.id LIMIT 1;

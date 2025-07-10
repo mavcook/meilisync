@@ -34,6 +34,21 @@ class Meili:
         events = [Event(type=EventType.create, data=item, table=sync.table) for item in data]
         return await self.handle_events_by_type(sync, events, EventType.create)
 
+    async def create_index(self, sync: Sync):
+        # TODO: improve here and elsewhere. all the index CRUD logic is a mess
+        pk = sync.pk
+        if sync.use_existing_index_settings:
+            settings = await self.client.index(sync.index_name).get_settings()
+        else:
+            settings = sync.index_settings
+        
+        index_tmp = await self.client.create_index(sync.index_name, primary_key=pk)
+        task = await index_tmp.update_settings(settings)
+        logger.info(f"Waiting for update tmp index {sync.index_name} settings to complete...")
+        await self.client.wait_for_task(
+            task_id=task.task_uid, timeout_in_ms=self.wait_for_task_timeout
+        )
+
     async def refresh_data(self, sync: Sync, data: AsyncGenerator, keep_index: bool = False):
         index = sync.index_name
         pk = sync.pk
@@ -44,7 +59,7 @@ class Meili:
             except MeilisearchApiError as e:
                 if e.code != "MeilisearchApiError.index_not_found":
                     raise
-            if sync.use_existing:
+            if sync.use_existing_index_settings:
                 settings = await self.client.index(index).get_settings()
             else:
                 settings = sync.index_settings
@@ -136,17 +151,19 @@ class Meili:
     async def handle_events_by_type(self, sync: Sync, events: List[Event], event_type: EventType):
         if not events:
             return
+        logger.debug(f'handling {event_type} events {len(events)}x')
+        
         index = self.client.index(sync.index_name)
         for event in events:
             await self.handle_plugins_pre(sync, event)
         task = None
         if event_type == EventType.create:
             task = await index.add_documents(
-                [event.mapping_data(sync.fields) for event in events], primary_key=sync.pk
+                [event.transform(sync) for event in events], primary_key=sync.pk
             )
         elif event_type == EventType.update:
             task = await index.update_documents(
-                [event.mapping_data(sync.fields) for event in events], primary_key=sync.pk
+                [event.transform(sync) for event in events], primary_key=sync.pk
             )
         elif event_type == EventType.delete:
             task = await index.delete_documents([str(event.data[sync.pk]) for event in events])
@@ -155,12 +172,14 @@ class Meili:
         return task
 
     async def handle_event(self, event: Event, sync: Sync):
+        logger.debug(f'handling single event {event}')
         event = await self.handle_plugins_pre(sync, event)
         index = self.client.index(sync.index_name)
+        logger.debug('got index')
         if event.type == EventType.create:
-            await index.add_documents([event.mapping_data(sync.fields)], primary_key=sync.pk)
+            await index.add_documents([event.transform(sync)], primary_key=sync.pk)
         elif event.type == EventType.update:
-            await index.update_documents([event.mapping_data(sync.fields)], primary_key=sync.pk)
+            await index.update_documents([event.transform(sync)], primary_key=sync.pk)
         elif event.type == EventType.delete:
             await index.delete_documents([str(event.data[sync.pk])])
         await self.handle_plugins_post(sync, event)
